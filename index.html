@@ -307,7 +307,9 @@
         const PARTY_KEYS = PARTY_HEADERS.map(headerToKey);
         const ADMIN_DNI = "41414141";
 
-        let supabase = null;
+        const SUPABASE_URL = "https://TU_PROYECTO.supabase.co";
+        const SUPABASE_ANON_KEY = "TU_ANON_KEY_PUBLICA";
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         let currentUser = null;
         let chartInstance = null;
 
