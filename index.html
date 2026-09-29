@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Comando Regional Moquegua - Sistema de Control Electoral</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col justify-between">
+
+    <!-- SUPABASE CONFIG MODAL IF NOT CONFIGURED -->
+    <div id="configModal" class="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+            <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+                ⚙️ Configuración de Supabase
+            </h3>
+            <p class="text-sm text-slate-600">Introduce tus credenciales de Supabase para conectar el sistema en tiempo real.</p>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Supabase URL</label>
+                <input id="supabaseUrlInput" type="text" placeholder="https://tu-proyecto.supabase.co" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Supabase Anon / Public Key</label>
+                <input id="supabaseKeyInput" type="password" placeholder="eyJhbGciOi..." class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+            </div>
+            <button onclick="saveSupabaseConfig()" class="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow transition">
+                Conectar y Guardar
+            </button>
+        </div>
+    </div>
+
+    <!-- HEADER / NAVBAR -->
+    <header class="bg-slate-900 text-white shadow-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="bg-red-600 text-white font-black px-3 py-1.5 rounded-lg text-sm tracking-wider shadow">MOQ</div>
+                <div>
+                    <h1 class="text-base font-bold tracking-tight">COMANDO REGIONAL DE CAMPAÑA</h1>
+                    <p class="text-xs text-slate-400">Sistema de Control y Monitoreo Electoral 2026</p>
+                </div>
+            </div>
+            <div id="userHeaderInfo" class="hidden flex items-center gap-4">
+                <span id="userRoleBadge" class="text-xs font-bold px-2.5 py-1 bg-slate-800 text-emerald-400 rounded-full border border-slate-700"></span>
+                <button onclick="logout()" class="text-xs text-slate-300 hover:text-white font-semibold underline">Salir</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-7xl mx-auto px-4 py-8 flex-grow w-full">
+
+        <!-- VIEW 1: LOGIN POR DNI -->
+        <section id="loginView" class="max-w-md mx-auto mt-12">
+            <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 space-y-6">
+                <div class="text-center space-y-2">
+                    <div class="inline-block p-3 bg-red-50 text-red-600 rounded-2xl text-2xl font-black mb-1">DNI</div>
+                    <h2 class="text-2xl font-black text-slate-900">Acceso Personeros</h2>
+                    <p class="text-sm text-slate-500">Ingrese su DNI de 8 dígitos autorizado para registrar o supervisar actas.</p>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Número de DNI</label>
+                        <input id="dniInput" type="text" inputmode="numeric" maxlength="8" placeholder="Ej. 41414141" class="w-full px-4 py-3 border border-slate-300 rounded-xl font-bold text-lg text-center tracking-widest focus:ring-2 focus:ring-red-500 outline-none">
+                    </div>
+                    <button onclick="handleLogin()" class="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-lg shadow-red-600/20 transition">
+                        Ingresar al Sistema
+                    </button>
+                    <div id="loginError" class="text-xs font-semibold text-center text-red-600 hidden"></div>
+                </div>
+                <div class="pt-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400 font-semibold">
+                    <span>Moquegua, Perú</span>
+                    <button onclick="openConfigModal()" class="hover:underline text-slate-600">Configurar DB</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 2: PERSONERO REGISTRO DE VOTOS Y FOTO DE ACTA -->
+        <section id="personerView" class="hidden space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <span id="personerSessionTitle" class="text-xs font-bold text-red-600 uppercase tracking-wider">Personero de Mesa</span>
+                    <h3 id="personerLocalTitle" class="text-xl font-black text-slate-900">Local de Votación</h3>
+                    <p id="personerMesaTitle" class="text-sm text-slate-500 font-medium">Mesa N°: -</p>
+                </div>
+                <div class="w-full md:w-auto flex gap-2">
+                    <input id="searchMesaInput" type="text" placeholder="Buscar N° Mesa..." class="px-3 py-2 border rounded-xl text-sm font-bold w-full md:w-48 outline-none focus:ring-2 focus:ring-red-500">
+                    <button onclick="searchMesa()" class="px-4 py-2 bg-slate-900 text-white font-bold text-sm rounded-xl hover:bg-slate-800">Buscar</button>
+                </div>
+            </div>
+
+            <!-- Formulario de Votos -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+                <h4 class="text-lg font-black text-slate-900 border-b pb-3">Registro de Votos por Partido</h4>
+                <div id="partiesFormContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Generado dinámicamente -->
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t">
+                    <div class="bg-slate-50 p-4 rounded-xl border">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">VOTOS BLANCOS</label>
+                        <input id="votosBlanco" type="number" min="0" value="0" class="w-full font-bold text-lg p-2 border rounded-lg bg-white">
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-xl border">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">VOTOS NULOS</label>
+                        <input id="votosNulo" type="number" min="0" value="0" class="w-full font-bold text-lg p-2 border rounded-lg bg-white">
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-xl border">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">IMPUGNADOS</label>
+                        <input id="votosImpugnado" type="number" min="0" value="0" class="w-full font-bold text-lg p-2 border rounded-lg bg-white">
+                    </div>
+                    <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-200">
+                        <label class="block text-xs font-bold text-emerald-800 mb-1">TOTAL EMITIDOS</label>
+                        <input id="totalEmitidos" type="text" readonly value="0" class="w-full font-black text-lg p-2 text-emerald-700 bg-transparent outline-none">
+                    </div>
+                </div>
+
+                <!-- Foto de Acta -->
+                <div class="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-300 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div>
+                        <p class="font-bold text-sm text-slate-800">Fotografía del Acta de Votación</p>
+                        <p class="text-xs text-slate-500">Sube la foto tomada desde el celular para respaldar el acta digitalmente.</p>
+                    </div>
+                    <input id="actaPhotoInput" type="file" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100">
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4">
+                    <button onclick="saveVotes()" class="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-lg transition">
+                        Guardar Votos y Subir Acta
+                    </button>
+                </div>
+                <div id="saveMessage" class="text-center font-bold text-sm hidden"></div>
+            </div>
+        </section>
+
+        <!-- VIEW 3: TABLERO ADMIN ESTILO GOOGLE DRIVE / NOTION & CRUD DE PADRÓN -->
+        <section id="adminView" class="hidden space-y-6">
+            <!-- Tabs navegación admin -->
+            <div class="flex border-b border-slate-300 gap-6">
+                <button onclick="switchAdminTab('dashboard')" id="tabBtnDashboard" class="pb-3 font-bold text-sm text-red-600 border-b-2 border-red-600 transition">📊 Dashboard y Resumen</button>
+                <button onclick="switchAdminTab('drive')" id="tabBtnDrive" class="pb-3 font-bold text-sm text-slate-500 hover:text-slate-900 transition">📁 Actas & Carpetas (Drive)</button>
+                <button onclick="switchAdminTab('padron')" id="tabBtnPadron" class="pb-3 font-bold text-sm text-slate-500 hover:text-slate-900 transition">⚙️ Gestionar Padrón y Locales</button>
+            </div>
+
+            <!-- TAB 1: DASHBOARD -->
+            <div id="adminTabDashboard" class="space-y-6">
+                <!-- KPIs -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <p class="text-xs font-bold text-slate-400 uppercase">Mesas Contabilizadas</p>
+                        <h3 id="kpiMesas" class="text-3xl font-black text-slate-900 mt-1">0 / 0</h3>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <p class="text-xs font-bold text-slate-400 uppercase">Votos Emitidos</p>
+                        <h3 id="kpiEmitidos" class="text-3xl font-black text-red-600 mt-1">0</h3>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <p class="text-xs font-bold text-slate-400 uppercase">Partido Líder</p>
+                        <h3 id="kpiLider" class="text-xl font-black text-slate-900 mt-1 truncate">-</h3>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <p class="text-xs font-bold text-slate-400 uppercase">Actas con Foto</p>
+                        <h3 id="kpiFotos" class="text-3xl font-black text-emerald-600 mt-1">0</h3>
+                    </div>
+                </div>
+
+                <!-- Gráficos y Resultados -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h4 class="text-base font-black text-slate-900 mb-4">Conteo de Votos por Partido</h4>
+                        <div class="h-72">
+                            <canvas id="resultsChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                        <h4 class="text-base font-black text-slate-900 mb-4">Resumen General</h4>
+                        <div id="summaryPartiesList" class="space-y-2 overflow-y-auto max-h-64 pr-2 text-sm font-semibold">
+                            <!-- Lista -->
+                        </div>
+                        <button onclick="window.print()" class="mt-4 w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800">🖨️ Exportar / Imprimir Reporte</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: DRIVE / ARCHIVOS DE ACTAS -->
+            <div id="adminTabDrive" class="hidden space-y-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h3 class="text-lg font-black text-slate-900">📁 Explorador de Actas (Estilo Drive)</h3>
+                            <p class="text-xs text-slate-500">Visualiza las carpetas por local y las actas escaneadas subidas por mesa.</p>
+                        </div>
+                        <select id="filterProvinciaDrive" onchange="renderDriveFiles()" class="text-xs font-bold border rounded-lg p-2 bg-slate-50">
+                            <option value="">Todas las Provincias</option>
+                        </select>
+                    </div>
+                    <div id="driveFilesContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Tarjetas de carpetas y archivos -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: PADRÓN CRUD -->
+            <div id="adminTabPadron" class="hidden space-y-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h3 class="text-lg font-black text-slate-900">⚙️ Administración del Padrón Electoral</h3>
+                            <p class="text-xs text-slate-500">Agrega o edita locales, mesas, personeros y DNIs autorizados.</p>
+                        </div>
+                        <button onclick="openMesaModal()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow">➕ Nueva Mesa / Padrón</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-100 text-slate-600 uppercase">
+                                <tr>
+                                    <th class="p-3">Provincia</th>
+                                    <th class="p-3">Local</th>
+                                    <th class="p-3">Mesa</th>
+                                    <th class="p-3">Personero Mesa</th>
+                                    <th class="p-3">DNI Mesa</th>
+                                    <th class="p-3">Personero Local</th>
+                                    <th class="p-3">DNI Local</th>
+                                    <th class="p-3 text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="padronTableBody" class="divide-y divide-slate-200 font-medium">
+                                <!-- Filas -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL EDITAR / CREAR MESA PADRÓN -->
+    <div id="mesaModal" class="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+            <h3 id="modalTitle" class="text-lg font-black text-slate-900">Registrar Nueva Mesa</h3>
+            <input type="hidden" id="editMesaId">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Provincia</label>
+                    <input id="mProvincia" type="text" class="w-full p-2 border rounded-lg text-xs font-semibold">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">N° de Mesa</label>
+                    <input id="nMesa" type="text" class="w-full p-2 border rounded-lg text-xs font-semibold">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Nombre del Local</label>
+                <input id="mNombreLocal" type="text" class="w-full p-2 border rounded-lg text-xs font-semibold">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Personero de Mesa</label>
+                    <input id="mPersoneroMesa" type="text" class="w-full p-2 border rounded-lg text-xs font-semibold">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">DNI Personero Mesa</label>
+                    <input id="mDniMesa" type="text" maxlength="8" class="w-full p-2 border rounded-lg text-xs font-semibold">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Personero de Local</label>
+                    <input id="mPersoneroLocal" type="text" class="w-full p-2 border rounded-lg text-xs font-semibold">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">DNI Personero Local</label>
+                    <input id="mDniLocal" type="text" maxlength="8" class="w-full p-2 border rounded-lg text-xs font-semibold">
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeMesaModal()" class="px-4 py-2 bg-slate-200 text-slate-700 font-bold text-xs rounded-xl">Cancelar</button>
+                <button onclick="saveMesaPadron()" class="px-4 py-2 bg-red-600 text-white font-bold text-xs rounded-xl">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="bg-white border-t border-slate-200 mt-12 py-4 text-center text-xs text-slate-400 font-semibold">
+        Comando Regional de Campaña Moquegua &bull; Desarrollado para uso oficial electoral
+    </footer>
+
+    <!-- SCRIPT DE LÓGICA COMPLETA -->
+    <script>
+        const PARTY_HEADERS = [
+            'SOMOS PERU', 'KAUSACHUN', 'ACCION POPULAR', 'ALIANZA ELECTORAL VENCEREMOS',
+            'JUNTOS POR EL PERU', 'PARTIDO DEL BUEN GOBIERNO', 'PERU PRIMERO',
+            'PPC', 'PODEMOS PERU', 'PROGRESEMOS', 'VAMOS MOQUEGUA'
+        ];
+
+        function headerToKey(h) {
+            return h.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9\s]/g, '').trim().split(/\s+/).map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)).join('');
+        }
+
+        const PARTY_KEYS = PARTY_HEADERS.map(headerToKey);
+        const ADMIN_DNI = "41414141";
+
+        let supabase = null;
+        let currentUser = null;
+        let chartInstance = null;
+
+        // Inicialización
+        window.addEventListener('DOMContentLoaded', () => {
+            renderPartiesForm();
+            const url = localStorage.getItem('SB_URL');
+            const key = localStorage.getItem('SB_KEY');
+            if (url && key) {
+                supabase = window.supabase.createClient(url, key);
+            } else {
+                openConfigModal();
+            }
+        });
+
+        function openConfigModal() {
+            document.getElementById('supabaseUrlInput').value = localStorage.getItem('SB_URL') || '';
+            document.getElementById('supabaseKeyInput').value = localStorage.getItem('SB_KEY') || '';
+            document.getElementById('configModal').classList.remove('hidden');
+        }
+
+        function saveSupabaseConfig() {
+            const url = document.getElementById('supabaseUrlInput').value.trim();
+            const key = document.getElementById('supabaseKeyInput').value.trim();
+            if(!url || !key) { alert('Introduce URLs y llaves válidas'); return; }
+            localStorage.setItem('SB_URL', url);
+            localStorage.setItem('SB_KEY', key);
+            supabase = window.supabase.createClient(url, key);
+            document.getElementById('configModal').classList.add('hidden');
+            alert('¡Conectado con éxito a Supabase!');
+        }
+
+        function renderPartiesForm() {
+            const container = document.getElementById('partiesFormContainer');
+            container.innerHTML = PARTY_HEADERS.map((h, i) => `
+                <div class="bg-slate-50 p-3 rounded-xl border">
+                    <label class="block text-xs font-bold text-slate-700 mb-1 truncate">${h}</label>
+                    <input id="party_${PARTY_KEYS[i]}" type="number" min="0" value="0" oninput="calculateTotal()" class="w-full font-bold text-base p-2 border rounded-lg bg-white party-input">
+                </div>
+            `).join('');
+
+            ['votosBlanco', 'votosNulo', 'votosImpugnado'].forEach(id => {
+                document.getElementById(id).addEventListener('input', calculateTotal);
+            });
+        }
+
+        function calculateTotal() {
+            let sum = 0;
+            PARTY_KEYS.forEach(k => {
+                sum += Number(document.getElementById(`party_${k}`).value) || 0;
+            });
+            sum += Number(document.getElementById('votosBlanco').value) || 0;
+            sum += Number(document.getElementById('votosNulo').value) || 0;
+            sum += Number(document.getElementById('votosImpugnado').value) || 0;
+            document.getElementById('totalEmitidos').value = sum;
+        }
+
+        async function handleLogin() {
+            const dni = document.getElementById('dniInput').value.trim();
+            const errDiv = document.getElementById('loginError');
+            errDiv.classList.add('hidden');
+
+            if (!/^\d{8}$/.test(dni)) {
+                errDiv.textContent = "Ingrese un DNI válido de 8 dígitos.";
+                errDiv.classList.remove('hidden');
+                return;
+            }
+
+            if (!supabase) {
+                alert('Configure primero su conexión a Supabase.');
+                openConfigModal();
+                return;
+            }
+
+            // Administrador General
+            if (dni === ADMIN_DNI) {
+                currentUser = { role: 'ADMIN', dni };
+                showView('adminView');
+                loadAdminDashboard();
+                loadPadronTable();
+                loadDriveFiles();
+                setupHeaderInfo('ADMINISTRADOR GENERAL');
+                return;
+            }
+
+            // Buscar en Padrón
+            const { data, error } = await supabase.from('mesas_padron').select('*').or(`dni_personero_mesa.eq.${dni},dni_personero_local.eq.${dni}`);
+            
+            if (error || !data || data.length === 0) {
+                errDiv.textContent = "DNI no autorizado en el padrón electoral.";
+                errDiv.classList.remove('hidden');
+                return;
+            }
+
+            const record = data[0];
+            if (record.dni_personero_mesa === dni) {
+                currentUser = { role: 'PERSONERO', record };
+                showView('personerView');
+                setupHeaderInfo('PERSONERO DE MESA');
+                loadMesaDataForPersonero(record.n_mesa);
+            } else {
+                currentUser = { role: 'PERSONERO_LOCAL', record };
+                // Personero de local puede ver tablero o gestionar mesas de su local
+                showView('adminView');
+                loadAdminDashboard();
+                setupHeaderInfo('PERSONERO DE LOCAL');
+            }
+        }
+
+        function setupHeaderInfo(roleText) {
+            document.getElementById('userHeaderInfo').classList.remove('hidden');
+            document.getElementById('userRoleBadge').textContent = roleText;
+        }
+
+        function logout() {
+            currentUser = null;
+            document.getElementById('userHeaderInfo').classList.add('hidden');
+            showView('loginView');
+            document.getElementById('dniInput').value = '';
+        }
+
+        function showView(viewId) {
+            ['loginView', 'personerView', 'adminView'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(viewId).classList.remove('hidden');
+        }
+
+        async function loadMesaDataForPersonero(n_mesa) {
+            document.getElementById('personerLocalTitle').textContent = currentUser.record.nombre_local || 'Local de Votación';
+            document.getElementById('personerMesaTitle').textContent = `Mesa N°: ${n_mesa}`;
+            document.getElementById('searchMesaInput').value = n_mesa;
+
+            const { data } = await supabase.from('votos_mesas').select('*').eq('n_mesa', n_mesa).single();
+            if (data) {
+                PARTY_KEYS.forEach(k => {
+                    if(document.getElementById(`party_${k}`)) document.getElementById(`party_${k}`).value = data[k] || 0;
+                });
+                document.getElementById('votosBlanco').value = data.votos_en_blanco || 0;
+                document.getElementById('votosNulo').value = data.votos_nulos || 0;
+                document.getElementById('votosImpugnado').value = data.votos_impugnados || 0;
+                calculateTotal();
+            }
+        }
+
+        async function searchMesa() {
+            const m = document.getElementById('searchMesaInput').value.trim();
+            if(!m) return;
+            const { data, error } = await supabase.from('mesas_padron').select('*').eq('n_mesa', m).single();
+            if(error || !data) { alert('Mesa no encontrada en el padrón.'); return; }
+            currentUser.record = data;
+            loadMesaDataForPersonero(m);
+        }
+
+        async function saveVotes() {
+            const n_mesa = currentUser.record.n_mesa;
+            const fileInput = document.getElementById('actaPhotoInput');
+            let photoUrl = currentUser.record.link_carpeta_actas || '';
+
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                const fileName = `acta_${n_mesa}_${Date.now()}.jpg`;
+                const { error: uploadErr } = await supabase.storage.from('actas-votacion').upload(fileName, file);
+                if (!uploadErr) {
+                    const { data: publicUrlData } = supabase.storage.from('actas-votacion').getPublicUrl(fileName);
+                    photoUrl = publicUrlData.publicUrl;
+                }
+            }
+
+            const payload = {
+                n_mesa,
+                votos_en_blanco: Number(document.getElementById('votosBlanco').value) || 0,
+                votos_nulos: Number(document.getElementById('votosNulo').value) || 0,
+                votos_impugnados: Number(document.getElementById('votosImpugnado').value) || 0,
+                total_votos_emitidos: Number(document.getElementById('totalEmitidos').value) || 0,
+                actualizado_por: currentUser.dni || currentUser.record.dni_personero_mesa
+            };
+
+            PARTY_KEYS.forEach((k, i) => {
+                payload[k] = Number(document.getElementById(`party_${PARTY_KEYS[i]}`).value) || 0;
+            });
+
+            // Upsert votos
+            const { error } = await supabase.from('votos_mesas').upsert(payload, { onConflict: 'n_mesa' });
+            // Update link foto en padrón
+            await supabase.from('mesas_padron').update({ link_carpeta_actas: photoUrl }).eq('n_mesa', n_mesa);
+
+            const msg = document.getElementById('saveMessage');
+            if (error) {
+                msg.textContent = "Error al guardar votos: " + error.message;
+                msg.className = "text-center font-bold text-sm text-red-600 block";
+            } else {
+                msg.textContent = "¡Votos guardados y acta subida con éxito!";
+                msg.className = "text-center font-bold text-sm text-emerald-600 block";
+            }
+        }
+
+        // ADMIN DASHBOARD & DRIVE & PADRÓN
+        function switchAdminTab(tab) {
+            ['Dashboard', 'Drive', 'Padron'].forEach(t => {
+                document.getElementById(`adminTab${t}`).classList.add('hidden');
+                document.getElementById(`tabBtn${t}`).className = "pb-3 font-bold text-sm text-slate-500 hover:text-slate-900 transition border-b-2 border-transparent";
+            });
+            document.getElementById(`adminTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.remove('hidden');
+            document.getElementById(`tabBtn${tab.charAt(0).toUpperCase() + tab.slice(1)}`).className = "pb-3 font-bold text-sm text-red-600 border-b-2 border-red-600 transition";
+            
+            if(tab === 'dashboard') loadAdminDashboard();
+            if(tab === 'drive') loadDriveFiles();
+            if(tab === 'padron') loadPadronTable();
+        }
+
+        async function loadAdminDashboard() {
+            const { data: padron } = await supabase.from('mesas_padron').select('*');
+            const { data: votos } = await supabase.from('votos_mesas').select('*');
+
+            const totalMesas = padron ? padron.length : 0;
+            const mesasCount = votos ? votos.length : 0;
+            let totalEmitidos = 0;
+            let totalFotos = padron ? padron.filter(p => p.link_carpeta_actas).length : 0;
+
+            const partyTotals = {};
+            PARTY_KEYS.forEach(k => partyTotals[k] = 0);
+
+            if (votos) {
+                votos.forEach(v => {
+                    totalEmitidos += v.total_votos_emitidos || 0;
+                    PARTY_KEYS.forEach(k => {
+                        partyTotals[k] += v[k] || 0;
+                    });
+                });
+            }
+
+            document.getElementById('kpiMesas').textContent = `${mesasCount} / ${totalMesas}`;
+            document.getElementById('kpiEmitidos').textContent = totalEmitidos.toLocaleString();
+            document.getElementById('kpiFotos').textContent = totalFotos;
+
+            let maxV = -1;
+            let lider = '-';
+            PARTY_KEYS.forEach((k, i) => {
+                if (partyTotals[k] > maxV) {
+                    maxV = partyTotals[k];
+                    lider = PARTY_HEADERS[i];
+                }
+            });
+            document.getElementById('kpiLider').textContent = lider;
+
+            // Listado lateral
+            const summaryList = document.getElementById('summaryPartiesList');
+            summaryList.innerHTML = PARTY_HEADERS.map((h, i) => `
+                <div class="flex justify-between items-center p-2 bg-slate-50 rounded-lg">
+                    <span class="font-bold text-slate-700">${h}</span>
+                    <span class="font-black text-red-600">${partyTotals[PARTY_KEYS[i]].toLocaleString()}</span>
+                </div>
+            `).join('');
+
+            // Renderizar Gráfico Chart.js
+            const ctx = document.getElementById('resultsChart').getContext('2d');
+            if(chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: PARTY_HEADERS,
+                    datasets: [{
+                        label: 'Votos Válidos',
+                        data: PARTY_KEYS.map(k => partyTotals[k]),
+                        backgroundColor: '#dc2626',
+                        borderRadius: 8
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        async function loadDriveFiles() {
+            const { data } = await supabase.from('mesas_padron').select('*').not('link_carpeta_actas', 'is', null);
+            const container = document.getElementById('driveFilesContainer');
+            if(!data || data.length === 0) {
+                container.innerHTML = '<p class="text-xs text-slate-400 col-span-full">No hay actas fotografiadas subidas aún.</p>';
+                return;
+            }
+            container.innerHTML = data.map(item => `
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-3">
+                    <div class="flex items-center gap-3">
+                        <div class="p-3 bg-red-50 text-red-600 rounded-xl font-black text-sm">📁</div>
+                        <div>
+                            <p class="font-bold text-sm text-slate-900">Mesa N° ${item.n_mesa}</p>
+                            <p class="text-xs text-slate-500">${item.nombre_local || 'Local'}</p>
+                        </div>
+                    </div>
+                    <a href="${item.link_carpeta_actas}" target="_blank" class="w-full py-2 bg-slate-900 text-white font-bold text-xs rounded-xl text-center hover:bg-slate-800 transition">Ver Acta Escaneada</a>
+                </div>
+            `).join('');
+        }
+
+        async function loadPadronTable() {
+            const { data } = await supabase.from('mesas_padron').select('*').order('n_mesa', { ascending: true });
+            const tbody = document.getElementById('padronTableBody');
+            if(!data) return;
+            tbody.innerHTML = data.map(item => `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-3">${item.provincia || '-'}</td>
+                    <td class="p-3 font-bold">${item.nombre_local || '-'}</td>
+                    <td class="p-3 font-black text-red-600">${item.n_mesa}</td>
+                    <td class="p-3">${item.personero_mesa || '-'}</td>
+                    <td class="p-3 font-mono">${item.dni_personero_mesa || '-'}</td>
+                    <td class="p-3">${item.personero_local || '-'}</td>
+                    <td class="p-3 font-mono">${item.dni_personero_local || '-'}</td>
+                    <td class="p-3 text-right space-x-2">
+                        <button onclick="editMesa('${item.id}')" class="text-xs font-bold text-blue-600 hover:underline">Editar</button>
+                        <button onclick="deleteMesa('${item.id}')" class="text-xs font-bold text-red-600 hover:underline">Eliminar</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function openMesaModal() {
+            document.getElementById('editMesaId').value = '';
+            ['mProvincia', 'nMesa', 'mNombreLocal', 'mPersoneroMesa', 'mDniMesa', 'mPersoneroLocal', 'mDniLocal'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('mesaModal').classList.remove('hidden');
+        }
+
+        function closeMesaModal() {
+            document.getElementById('mesaModal').classList.add('hidden');
+        }
+
+        async function saveMesaPadron() {
+            const id = document.getElementById('editMesaId').value;
+            const payload = {
+                provincia: document.getElementById('mProvincia').value,
+                n_mesa: document.getElementById('nMesa').value,
+                nombre_local: document.getElementById('mNombreLocal').value,
+                personero_mesa: document.getElementById('mPersoneroMesa').value,
+                dni_personero_mesa: document.getElementById('mDniMesa').value,
+                personero_local: document.getElementById('mPersoneroLocal').value,
+                dni_personero_local: document.getElementById('mDniLocal').value
+            };
+
+            if(id) {
+                await supabase.from('mesas_padron').update(payload).eq('id', id);
+            } else {
+                await supabase.from('mesas_padron').insert([payload]);
+            }
+            closeMesaModal();
+            loadPadronTable();
+        }
+
+        async function deleteMesa(id) {
+            if(!confirm('¿Estás seguro de eliminar esta mesa del padrón?')) return;
+            await supabase.from('mesas_padron').delete().eq('id', id);
+            loadPadronTable();
+        }
+
+        async function editMesa(id) {
+            const { data } = await supabase.from('mesas_padron').select('*').eq('id', id).single();
+            if(!data) return;
+            document.getElementById('editMesaId').value = data.id;
+            document.getElementById('mProvincia').value = data.provincia || '';
+            document.getElementById('nMesa').value = data.n_mesa || '';
+            document.getElementById('mNombreLocal').value = data.nombre_local || '';
+            document.getElementById('mPersoneroMesa').value = data.personero_mesa || '';
+            document.getElementById('mDniMesa').value = data.dni_personero_mesa || '';
+            document.getElementById('mPersoneroLocal').value = data.personero_local || '';
+            document.getElementById('mDniLocal').value = data.dni_personero_local || '';
+            document.getElementById('mesaModal').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
